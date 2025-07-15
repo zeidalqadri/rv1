@@ -127,6 +127,7 @@ export default function RV0VectorStudio() {
   const [showLogs, setShowLogs] = useState<boolean>(false)
   const [processingResult, setProcessingResult] = useState<ProcessingResult | null>(null)
   const [svgPreview, setSvgPreview] = useState<string | null>(null)
+  const [imageStructure, setImageStructure] = useState<any>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -213,15 +214,17 @@ export default function RV0VectorStudio() {
         
         ctx?.drawImage(img, 0, 0, canvas.width, canvas.height)
         
-        // Extract dominant colors
+        // Extract dominant colors and analyze structure
         const imageData = ctx?.getImageData(0, 0, canvas.width, canvas.height)
         const colors = extractDominantColors(imageData)
+        const structure = analyzeImageStructure(imageData)
         
         setColorPalette({
           detectedColors: colors,
           brandColors: colors.slice(0, 2),
           accuracy: 98,
         })
+        setImageStructure(structure)
       }
       img.src = imageUrl
     }
@@ -286,13 +289,13 @@ export default function RV0VectorStudio() {
             metrics: finalMetrics,
           })
 
-          // Generate advanced SVG preview based on detected colors
+          // Generate advanced SVG preview based on detected colors and structure
           const svgColors = [
             ...colorPalette.detectedColors,
             ...colorPalette.brandColors
           ].filter((color, index, arr) => arr.indexOf(color) === index).slice(0, 5)
           
-          setSvgPreview(generateAdvancedSVG(svgColors, finalMetrics))
+          setSvgPreview(generateAdvancedSVG(svgColors, finalMetrics, imageStructure))
 
           setProgress({
             phase: 5,
@@ -353,53 +356,139 @@ export default function RV0VectorStudio() {
     return minutes > 0 ? `${minutes}m ${seconds % 60}s` : `${seconds}s`
   }
 
-  const generateAdvancedSVG = useCallback((colors: string[], metrics: any) => {
+  const analyzeImageStructure = useCallback((imageData: ImageData | undefined) => {
+    if (!imageData) return { type: 'generic', patterns: [] }
+    
+    const data = imageData.data
+    const width = imageData.width
+    const height = imageData.height
+    
+    // Detect high contrast patterns (like QR codes)
+    let contrastRegions = 0
+    let totalRegions = 0
+    const gridSize = 8
+    
+    for (let y = 0; y < height - gridSize; y += gridSize) {
+      for (let x = 0; x < width - gridSize; x += gridSize) {
+        const idx = (y * width + x) * 4
+        const brightness = (data[idx] + data[idx + 1] + data[idx + 2]) / 3
+        
+        // Check surrounding pixels for contrast
+        let minBright = brightness
+        let maxBright = brightness
+        
+        for (let dy = 0; dy < gridSize; dy += 2) {
+          for (let dx = 0; dx < gridSize; dx += 2) {
+            const checkIdx = ((y + dy) * width + (x + dx)) * 4
+            if (checkIdx < data.length) {
+              const checkBright = (data[checkIdx] + data[checkIdx + 1] + data[checkIdx + 2]) / 3
+              minBright = Math.min(minBright, checkBright)
+              maxBright = Math.max(maxBright, checkBright)
+            }
+          }
+        }
+        
+        const contrast = maxBright - minBright
+        if (contrast > 100) contrastRegions++
+        totalRegions++
+      }
+    }
+    
+    const contrastRatio = contrastRegions / totalRegions
+    
+    if (contrastRatio > 0.3) {
+      return { type: 'qr_code', patterns: [] }
+    } else if (contrastRatio > 0.15) {
+      return { type: 'logo', patterns: [] }
+    } else {
+      return { type: 'photo', patterns: [] }
+    }
+  }, [])
+
+  const generateAdvancedSVG = useCallback((colors: string[], metrics: any, imageStructure: any) => {
     const viewBox = "0 0 300 300"
     const centerX = 150
     const centerY = 150
-    
-    // Create multiple geometric shapes based on the image complexity
     const shapes = []
     
-    // Background circle (largest)
-    if (colors[0]) {
-      shapes.push(`<circle cx="${centerX}" cy="${centerY}" r="120" fill="${colors[0]}" opacity="0.9"/>`)
-    }
-    
-    // Main shapes - simulate logo elements
-    if (colors[1]) {
-      shapes.push(`<path d="M${centerX-80},${centerY-60} Q${centerX},${centerY-90} ${centerX+80},${centerY-60} L${centerX+60},${centerY+40} Q${centerX},${centerY+70} ${centerX-60},${centerY+40} Z" fill="${colors[1]}" fillRule="evenodd"/>`)
-    }
-    
-    // Inner elements
-    if (colors[2]) {
-      shapes.push(`<rect x="${centerX-40}" y="${centerY-30}" width="80" height="60" rx="10" fill="${colors[2]}"/>`)
-    }
-    
-    // Text or detail elements
-    if (colors[3]) {
-      shapes.push(`<circle cx="${centerX-30}" cy="${centerY-10}" r="8" fill="${colors[3]}"/>`)
-      shapes.push(`<circle cx="${centerX+30}" cy="${centerY-10}" r="8" fill="${colors[3]}"/>`)
-    }
-    
-    // Accent elements
-    if (colors[4]) {
-      shapes.push(`<path d="M${centerX-20},${centerY+10} L${centerX+20},${centerY+10} L${centerX+10},${centerY+30} L${centerX-10},${centerY+30} Z" fill="${colors[4]}"/>`)
-    }
-    
-    // Add stroke elements for definition
-    if (colors[1]) {
-      shapes.push(`<circle cx="${centerX}" cy="${centerY}" r="118" fill="none" stroke="${colors[1]}" strokeWidth="2" opacity="0.6"/>`)
+    if (imageStructure?.type === 'qr_code') {
+      // Generate QR-code-like pattern
+      const bgColor = colors[0] || '#ffffff'
+      const fgColor = colors[1] || '#000000'
+      
+      // Background
+      shapes.push(`<rect x="0" y="0" width="300" height="300" fill="${bgColor}"/>`)
+      
+      // Generate QR-like modules
+      const moduleSize = 12
+      const modules = 25
+      const startX = (300 - modules * moduleSize) / 2
+      const startY = (300 - modules * moduleSize) / 2
+      
+      // Create finder patterns (corners)
+      const finderPattern = (x: number, y: number) => [
+        `<rect x="${x}" y="${y}" width="${moduleSize * 7}" height="${moduleSize * 7}" fill="${fgColor}"/>`,
+        `<rect x="${x + moduleSize}" y="${y + moduleSize}" width="${moduleSize * 5}" height="${moduleSize * 5}" fill="${bgColor}"/>`,
+        `<rect x="${x + moduleSize * 2}" y="${y + moduleSize * 2}" width="${moduleSize * 3}" height="${moduleSize * 3}" fill="${fgColor}"/>`
+      ]
+      
+      // Add finder patterns
+      shapes.push(...finderPattern(startX, startY))
+      shapes.push(...finderPattern(startX + moduleSize * 18, startY))
+      shapes.push(...finderPattern(startX, startY + moduleSize * 18))
+      
+      // Add random data modules
+      for (let i = 0; i < 80; i++) {
+        const x = startX + (Math.floor(Math.random() * modules) * moduleSize)
+        const y = startY + (Math.floor(Math.random() * modules) * moduleSize)
+        if (Math.random() > 0.5) {
+          shapes.push(`<rect x="${x}" y="${y}" width="${moduleSize}" height="${moduleSize}" fill="${fgColor}"/>`)
+        }
+      }
+      
+    } else if (imageStructure?.type === 'logo') {
+      // Generate logo-like shapes
+      const mainColor = colors[0] || '#f7931e'
+      const accentColor = colors[1] || '#000000'
+      
+      // Background circle
+      shapes.push(`<circle cx="${centerX}" cy="${centerY}" r="140" fill="${mainColor}" opacity="0.2"/>`)
+      
+      // Main logo shape
+      shapes.push(`<path d="M${centerX-60},${centerY-80} Q${centerX},${centerY-100} ${centerX+60},${centerY-80} L${centerX+80},${centerY+60} Q${centerX},${centerY+80} ${centerX-80},${centerY+60} Z" fill="${mainColor}" fillRule="evenodd"/>`)
+      
+      // Inner elements
+      if (colors[2]) {
+        shapes.push(`<rect x="${centerX-30}" y="${centerY-20}" width="60" height="40" rx="8" fill="${colors[2]}"/>`)
+      }
+      
+      // Brand elements
+      shapes.push(`<circle cx="${centerX-20}" cy="${centerY}" r="6" fill="${accentColor}"/>`)
+      shapes.push(`<circle cx="${centerX+20}" cy="${centerY}" r="6" fill="${accentColor}"/>`)
+      
+    } else {
+      // Generic photo representation
+      const bg = colors[0] || '#f0f0f0'
+      const primary = colors[1] || '#333333'
+      const secondary = colors[2] || '#666666'
+      
+      // Background gradient
+      shapes.push(`<defs><linearGradient id="photoGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:${bg};stop-opacity:1" /><stop offset="100%" style="stop-color:${primary};stop-opacity:0.3" /></linearGradient></defs>`)
+      shapes.push(`<rect x="0" y="0" width="300" height="300" fill="url(#photoGrad)"/>`)
+      
+      // Abstract shapes representing photo content
+      for (let i = 0; i < 8; i++) {
+        const x = Math.random() * 250 + 25
+        const y = Math.random() * 250 + 25
+        const r = Math.random() * 30 + 10
+        const color = colors[Math.floor(Math.random() * Math.min(colors.length, 3))] || primary
+        shapes.push(`<circle cx="${x}" cy="${y}" r="${r}" fill="${color}" opacity="${0.3 + Math.random() * 0.4}"/>`)
+      }
     }
     
     return `<svg viewBox="${viewBox}" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">
-      <defs>
-        <filter id="soften">
-          <feGaussianBlur in="SourceGraphic" stdDeviation="0.5"/>
-        </filter>
-      </defs>
       ${shapes.join('\n      ')}
-      <text x="${centerX}" y="${centerY+60}" textAnchor="middle" fill="${colors[1] || '#000'}" fontSize="16" fontFamily="monospace" opacity="0.7">${metrics?.pathCount || 'SVG'} paths</text>
+      <text x="${centerX}" y="280" textAnchor="middle" fill="${colors[1] || '#000'}" fontSize="14" fontFamily="monospace" opacity="0.7">${metrics?.pathCount || 'SVG'} paths</text>
     </svg>`
   }, [])
 
