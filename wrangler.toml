@@ -1,14 +1,6 @@
-name = "rv0-production"
+name = "rv1-vector-studio"
 compatibility_date = "2024-12-01"
+pages_build_output_dir = "out"
 
 [env.production]
-name = "rv0-prod"
-
-[[pages_build_output_dir]]
-value = "out"
-
-[pages.build]
-command = "npm run build"
-
-[pages.env_vars]
-RASTERVECTOR_API_URL = "https://rastervector-n6ofijmqgq-uc.a.run.app"
+name = "rv1-production"
