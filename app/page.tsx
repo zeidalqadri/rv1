@@ -4,7 +4,7 @@ import type React from "react"
 
 export const dynamic = 'force-static'
 
-import { useState, useCallback, useRef } from "react"
+import { useState, useCallback, useRef, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
@@ -128,8 +128,16 @@ export default function RV0VectorStudio() {
   const [processingResult, setProcessingResult] = useState<ProcessingResult | null>(null)
   const [svgPreview, setSvgPreview] = useState<string | null>(null)
   const [imageStructure, setImageStructure] = useState<any>(null)
+  const [settingsChanged, setSettingsChanged] = useState<boolean>(false)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Track parameter changes after processing is complete
+  useEffect(() => {
+    if (progress.status === "complete") {
+      setSettingsChanged(true)
+    }
+  }, [selectedPreset, colorCount, scaleMultiplier, progress.status])
 
   const validateFile = (file: File): string | null => {
     const maxSize = 2 * 1024 * 1024 // 2MB
@@ -252,6 +260,7 @@ export default function RV0VectorStudio() {
     setProgress((prev) => ({ ...prev, status: "processing" }))
     setProcessingResult(null)
     setSvgPreview(null)
+    setSettingsChanged(false)
 
     // Simulate realistic processing phases
     let currentPhase = 1
@@ -349,6 +358,19 @@ export default function RV0VectorStudio() {
   const copyCommand = useCallback(() => {
     navigator.clipboard.writeText(generateCommand())
   }, [generateCommand])
+
+  const resetProcessing = useCallback(() => {
+    setProgress({
+      phase: 1,
+      percentage: 0,
+      elapsedTime: 0,
+      estimatedTotal: 0,
+      currentOperation: "Ready to process with new settings",
+      status: "idle",
+    })
+    setProcessingResult(null)
+    setSvgPreview(null)
+  }, [])
 
   const formatTime = (ms: number) => {
     const seconds = Math.floor(ms / 1000)
@@ -685,6 +707,31 @@ export default function RV0VectorStudio() {
                   >
                     <Play className="h-5 w-5 mr-2" />
                     Start rv0 Vectorization
+                  </Button>
+                </div>
+              )}
+              
+              {progress.status === "complete" && uploadedFile && (
+                <div className="mt-6 text-center space-y-3">
+                  {settingsChanged ? (
+                    <div className="text-sm text-amber-600 bg-amber-50 p-2 rounded border border-amber-200">
+                      ⚠️ Settings changed - click to re-process with new parameters
+                    </div>
+                  ) : (
+                    <div className="text-sm text-gray-600">
+                      Want to try different settings? Adjust presets or parameters above and re-process.
+                    </div>
+                  )}
+                  <Button
+                    onClick={startProcessing}
+                    className={`shadow-lg px-8 py-3 text-lg ${
+                      settingsChanged
+                        ? "bg-gradient-to-r from-amber-600 to-orange-600 text-white hover:from-amber-700 hover:to-orange-700"
+                        : "bg-gradient-to-r from-green-600 to-blue-600 text-white hover:from-green-700 hover:to-blue-700"
+                    }`}
+                  >
+                    <Play className="h-5 w-5 mr-2" />
+                    {settingsChanged ? "Re-process with New Settings" : "Try Again with Current Settings"}
                   </Button>
                 </div>
               )}
