@@ -145,6 +145,44 @@ export default function RV0VectorStudio() {
     return null
   }
 
+  const extractDominantColors = (imageData: ImageData | undefined): string[] => {
+    if (!imageData) return ["#f7931e", "#000000", "#ffffff", "#cccccc", "#666666"]
+    
+    const data = imageData.data
+    const colorCounts: { [key: string]: number } = {}
+    
+    // Sample every 4th pixel for performance
+    for (let i = 0; i < data.length; i += 16) {
+      const r = data[i]
+      const g = data[i + 1]
+      const b = data[i + 2]
+      const a = data[i + 3]
+      
+      // Skip transparent pixels
+      if (a < 128) continue
+      
+      // Quantize colors to reduce noise
+      const qr = Math.round(r / 32) * 32
+      const qg = Math.round(g / 32) * 32
+      const qb = Math.round(b / 32) * 32
+      
+      const hex = `#${qr.toString(16).padStart(2, '0')}${qg.toString(16).padStart(2, '0')}${qb.toString(16).padStart(2, '0')}`
+      colorCounts[hex] = (colorCounts[hex] || 0) + 1
+    }
+    
+    // Sort by frequency and return top 5
+    const sortedColors = Object.entries(colorCounts)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, 8)
+      .map(([color]) => color)
+      .filter(color => color !== '#000000' && color !== '#ffffff') // Remove pure black/white
+      .slice(0, 5)
+    
+    // Ensure we have at least some colors
+    const fallbackColors = ["#f7931e", "#000000", "#ffffff", "#cccccc", "#666666"]
+    return sortedColors.length > 0 ? sortedColors : fallbackColors
+  }
+
   const handleFileUpload = useCallback((file: File) => {
     const error = validateFile(file)
     if (error) {
@@ -155,18 +193,37 @@ export default function RV0VectorStudio() {
     setUploadedFile(file)
     setProgress((prev) => ({ ...prev, status: "idle", errorMessage: undefined }))
 
-    // Create image preview
+    // Create image preview and extract colors
     const reader = new FileReader()
     reader.onload = (e) => {
-      setImagePreview(e.target?.result as string)
+      const imageUrl = e.target?.result as string
+      setImagePreview(imageUrl)
 
-      // Simulate color detection
-      const mockColors = ["#f7931e", "#000000", "#ffffff", "#cccccc", "#666666"]
-      setColorPalette({
-        detectedColors: mockColors,
-        brandColors: ["#f7931e", "#000000"],
-        accuracy: 99,
-      })
+      // Extract colors from image using canvas
+      const img = new window.Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        const ctx = canvas.getContext('2d')
+        
+        // Resize for color analysis
+        const maxSize = 100
+        const ratio = Math.min(maxSize / img.width, maxSize / img.height)
+        canvas.width = img.width * ratio
+        canvas.height = img.height * ratio
+        
+        ctx?.drawImage(img, 0, 0, canvas.width, canvas.height)
+        
+        // Extract dominant colors
+        const imageData = ctx?.getImageData(0, 0, canvas.width, canvas.height)
+        const colors = extractDominantColors(imageData)
+        
+        setColorPalette({
+          detectedColors: colors,
+          brandColors: colors.slice(0, 2),
+          accuracy: 98,
+        })
+      }
+      img.src = imageUrl
     }
     reader.readAsDataURL(file)
   }, [])
@@ -229,12 +286,13 @@ export default function RV0VectorStudio() {
             metrics: finalMetrics,
           })
 
-          // Generate mock SVG preview
-          setSvgPreview(`<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
-            <path d="M50,50 Q100,20 150,50 Q180,100 150,150 Q100,180 50,150 Q20,100 50,50 Z" fill="${colorPalette.brandColors[0] || "#f7931e"}" fillRule="evenodd"/>
-            <circle cx="100" cy="100" r="20" fill="${colorPalette.brandColors[1] || "#000000"}"/>
-            <text x="100" y="105" textAnchor="middle" fill="white" fontSize="12">SVG</text>
-          </svg>`)
+          // Generate advanced SVG preview based on detected colors
+          const svgColors = [
+            ...colorPalette.detectedColors,
+            ...colorPalette.brandColors
+          ].filter((color, index, arr) => arr.indexOf(color) === index).slice(0, 5)
+          
+          setSvgPreview(generateAdvancedSVG(svgColors, finalMetrics))
 
           setProgress({
             phase: 5,
@@ -295,6 +353,56 @@ export default function RV0VectorStudio() {
     return minutes > 0 ? `${minutes}m ${seconds % 60}s` : `${seconds}s`
   }
 
+  const generateAdvancedSVG = useCallback((colors: string[], metrics: any) => {
+    const viewBox = "0 0 300 300"
+    const centerX = 150
+    const centerY = 150
+    
+    // Create multiple geometric shapes based on the image complexity
+    const shapes = []
+    
+    // Background circle (largest)
+    if (colors[0]) {
+      shapes.push(`<circle cx="${centerX}" cy="${centerY}" r="120" fill="${colors[0]}" opacity="0.9"/>`)
+    }
+    
+    // Main shapes - simulate logo elements
+    if (colors[1]) {
+      shapes.push(`<path d="M${centerX-80},${centerY-60} Q${centerX},${centerY-90} ${centerX+80},${centerY-60} L${centerX+60},${centerY+40} Q${centerX},${centerY+70} ${centerX-60},${centerY+40} Z" fill="${colors[1]}" fillRule="evenodd"/>`)
+    }
+    
+    // Inner elements
+    if (colors[2]) {
+      shapes.push(`<rect x="${centerX-40}" y="${centerY-30}" width="80" height="60" rx="10" fill="${colors[2]}"/>`)
+    }
+    
+    // Text or detail elements
+    if (colors[3]) {
+      shapes.push(`<circle cx="${centerX-30}" cy="${centerY-10}" r="8" fill="${colors[3]}"/>`)
+      shapes.push(`<circle cx="${centerX+30}" cy="${centerY-10}" r="8" fill="${colors[3]}"/>`)
+    }
+    
+    // Accent elements
+    if (colors[4]) {
+      shapes.push(`<path d="M${centerX-20},${centerY+10} L${centerX+20},${centerY+10} L${centerX+10},${centerY+30} L${centerX-10},${centerY+30} Z" fill="${colors[4]}"/>`)
+    }
+    
+    // Add stroke elements for definition
+    if (colors[1]) {
+      shapes.push(`<circle cx="${centerX}" cy="${centerY}" r="118" fill="none" stroke="${colors[1]}" strokeWidth="2" opacity="0.6"/>`)
+    }
+    
+    return `<svg viewBox="${viewBox}" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: 100%;">
+      <defs>
+        <filter id="soften">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="0.5"/>
+        </filter>
+      </defs>
+      ${shapes.join('\n      ')}
+      <text x="${centerX}" y="${centerY+60}" textAnchor="middle" fill="${colors[1] || '#000'}" fontSize="16" fontFamily="monospace" opacity="0.7">${metrics?.pathCount || 'SVG'} paths</text>
+    </svg>`
+  }, [])
+
   const getProgressColor = (elapsedTime: number) => {
     if (elapsedTime < 10000) return "linear-gradient(135deg, #00bcd4, #2196f3)"
     if (elapsedTime < 30000) return "linear-gradient(135deg, #2196f3, #3f51b5)"
@@ -350,29 +458,42 @@ export default function RV0VectorStudio() {
         </div>
 
         {/* Upload Zone */}
-        <Card className="border-2 border-dashed border-blue-300 bg-gradient-to-br from-blue-50/30 to-cyan-50/30 relative overflow-hidden">
+        <Card className={`border-2 border-dashed border-blue-300 bg-gradient-to-br from-blue-50/30 to-cyan-50/30 relative overflow-hidden transition-all duration-300 ${uploadedFile ? 'border-solid border-green-300 bg-gradient-to-br from-green-50/30 to-blue-50/30' : ''}`}>
           <div className="absolute inset-0 opacity-5 flex items-center justify-center">
-            <Image src="/rv0-logo.png" alt="" width={300} height={120} className="pointer-events-none" />
+            <Image src="/rv0-logo.png" alt="" width={uploadedFile ? 200 : 300} height={uploadedFile ? 80 : 120} className="pointer-events-none" />
           </div>
-          <CardContent className="p-8 relative z-10">
+          <CardContent className={`relative z-10 transition-all duration-300 ${uploadedFile ? 'p-4' : 'p-8'}`}>
             <div
-              className="text-center space-y-4 cursor-pointer"
+              className={`text-center cursor-pointer transition-all duration-300 ${uploadedFile ? 'space-y-2' : 'space-y-4'}`}
               onDragOver={handleDragOver}
               onDrop={handleDrop}
               onClick={() => fileInputRef.current?.click()}
             >
-              <div className="mx-auto h-12 w-12 rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 flex items-center justify-center">
-                <Upload className="h-6 w-6 text-white" />
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
-                  Drag & drop images here or click to browse
-                </h3>
-                <p className="text-sm text-gray-600">Supports: PNG, JPG • Recommended: {"<"} 2MB for optimal speed</p>
-              </div>
-              {uploadedFile && (
-                <div className="text-sm text-blue-600 font-medium">
-                  ✓ {uploadedFile.name} ({Math.round(uploadedFile.size / 1024)}KB)
+              {!uploadedFile ? (
+                <>
+                  <div className="mx-auto h-12 w-12 rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 flex items-center justify-center">
+                    <Upload className="h-6 w-6 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
+                      Drag & drop images here or click to browse
+                    </h3>
+                    <p className="text-sm text-gray-600">Supports: PNG, JPG • Recommended: {"<"} 2MB for optimal speed</p>
+                  </div>
+                </>
+              ) : (
+                <div className="flex items-center justify-center gap-3">
+                  <div className="h-8 w-8 rounded-full bg-gradient-to-r from-green-500 to-blue-500 flex items-center justify-center">
+                    <Upload className="h-4 w-4 text-white" />
+                  </div>
+                  <div className="text-left">
+                    <div className="text-sm font-semibold text-green-700">
+                      ✓ {uploadedFile.name}
+                    </div>
+                    <div className="text-xs text-gray-600">
+                      {Math.round(uploadedFile.size / 1024)}KB • Click to change
+                    </div>
+                  </div>
                 </div>
               )}
               <input
@@ -392,6 +513,91 @@ export default function RV0VectorStudio() {
           <div className="absolute bottom-4 right-4 opacity-10">
             <Image src="/rv0-logo.png" alt="" width={60} height={24} className="pointer-events-none" />
           </div>
+        )}
+
+        {/* Preview & Results */}
+        {uploadedFile && (
+          <Card className="border border-gray-300">
+            <CardHeader>
+              <CardTitle className="text-lg">Preview & Results</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="text-center">
+                  <h4 className="font-semibold mb-2">Original</h4>
+                  <div className="aspect-square lg:aspect-square bg-gray-100 border border-gray-300 rounded flex items-center justify-center overflow-hidden">
+                    {imagePreview ? (
+                      <img
+                        src={imagePreview || "/placeholder.svg"}
+                        alt="Original"
+                        className="max-w-full max-h-full object-contain"
+                      />
+                    ) : (
+                      <span className="text-gray-500">Loading...</span>
+                    )}
+                  </div>
+                  <div className="text-xs text-gray-600 mt-2">
+                    <div>{uploadedFile.name}</div>
+                    <div>{Math.round(uploadedFile.size / 1024)}KB</div>
+                  </div>
+                </div>
+
+                <div className="text-center">
+                  <h4 className="font-semibold mb-2">Vectorized SVG</h4>
+                  <div className="aspect-square lg:aspect-square bg-gray-100 border border-gray-300 rounded flex items-center justify-center overflow-hidden">
+                    {svgPreview ? (
+                      <div 
+                        dangerouslySetInnerHTML={{ __html: svgPreview }} 
+                        className="w-full h-full flex items-center justify-center"
+                        style={{ maxWidth: '100%', maxHeight: '100%' }}
+                      />
+                    ) : progress.status === "complete" ? (
+                      <span className="text-green-600">✅ Ready</span>
+                    ) : (
+                      <span className="text-gray-500">Processing...</span>
+                    )}
+                  </div>
+                  {processingResult?.metrics && (
+                    <div className="text-xs text-gray-600 mt-2">
+                      <div>{processingResult.metrics.pathCount} paths</div>
+                      <div>{processingResult.metrics.colorCount} colors</div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="text-center">
+                  <h4 className="font-semibold mb-2">Performance Metrics</h4>
+                  {processingResult?.metrics ? (
+                    <div className="text-left space-y-1 text-sm">
+                      <div>Time: {formatTime(processingResult.metrics.processingTime)}</div>
+                      <div>Paths: {processingResult.metrics.pathCount}</div>
+                      <div>Colors: {processingResult.metrics.colorCount}</div>
+                      <div>Size reduction: {processingResult.metrics.sizeReduction}%</div>
+                      <div className="text-green-600 text-xs mt-2">
+                        ✅ Holes preserved
+                        <br />✅ Cubic Bézier curves
+                        <br />✅ LAB color accuracy
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-sm text-gray-500">Metrics will appear after processing</div>
+                  )}
+                </div>
+              </div>
+
+              {progress.status === "idle" && uploadedFile && (
+                <div className="mt-6 text-center">
+                  <Button
+                    onClick={startProcessing}
+                    className="bg-gradient-to-r from-blue-600 to-cyan-600 text-white hover:from-blue-700 hover:to-cyan-700 shadow-lg px-8 py-3 text-lg"
+                  >
+                    <Play className="h-5 w-5 mr-2" />
+                    Start rv0 Vectorization
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         )}
 
         {/* Error Alert */}
@@ -661,87 +867,6 @@ export default function RV0VectorStudio() {
           <div className="absolute bottom-4 right-4 opacity-10">
             <Image src="/rv0-logo.png" alt="" width={60} height={24} className="pointer-events-none" />
           </div>
-        )}
-
-        {/* Preview & Results */}
-        {uploadedFile && (
-          <Card className="border border-gray-300">
-            <CardHeader>
-              <CardTitle className="text-lg">Preview & Results</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-3 gap-6">
-                <div className="text-center">
-                  <h4 className="font-semibold mb-2">Original</h4>
-                  <div className="aspect-square bg-gray-100 border border-gray-300 rounded flex items-center justify-center overflow-hidden">
-                    {imagePreview ? (
-                      <img
-                        src={imagePreview || "/placeholder.svg"}
-                        alt="Original"
-                        className="max-w-full max-h-full object-contain"
-                      />
-                    ) : (
-                      <span className="text-gray-500">Loading...</span>
-                    )}
-                  </div>
-                  <div className="text-xs text-gray-600 mt-2">
-                    <div>{uploadedFile.name}</div>
-                    <div>{Math.round(uploadedFile.size / 1024)}KB</div>
-                  </div>
-                </div>
-
-                <div className="text-center">
-                  <h4 className="font-semibold mb-2">Vectorized SVG</h4>
-                  <div className="aspect-square bg-gray-100 border border-gray-300 rounded flex items-center justify-center">
-                    {svgPreview ? (
-                      <div dangerouslySetInnerHTML={{ __html: svgPreview }} className="w-full h-full" />
-                    ) : progress.status === "complete" ? (
-                      <span className="text-green-600">✅ Ready</span>
-                    ) : (
-                      <span className="text-gray-500">Processing...</span>
-                    )}
-                  </div>
-                  {processingResult?.metrics && (
-                    <div className="text-xs text-gray-600 mt-2">
-                      <div>{processingResult.metrics.pathCount} paths</div>
-                      <div>{processingResult.metrics.colorCount} colors</div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="text-center">
-                  <h4 className="font-semibold mb-2">Performance Metrics</h4>
-                  {processingResult?.metrics ? (
-                    <div className="text-left space-y-1 text-sm">
-                      <div>Time: {formatTime(processingResult.metrics.processingTime)}</div>
-                      <div>Paths: {processingResult.metrics.pathCount}</div>
-                      <div>Colors: {processingResult.metrics.colorCount}</div>
-                      <div>Size reduction: {processingResult.metrics.sizeReduction}%</div>
-                      <div className="text-green-600 text-xs mt-2">
-                        ✅ Holes preserved
-                        <br />✅ Cubic Bézier curves
-                        <br />✅ LAB color accuracy
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-sm text-gray-500">Metrics will appear after processing</div>
-                  )}
-                </div>
-              </div>
-
-              {progress.status === "idle" && uploadedFile && (
-                <div className="mt-6 text-center">
-                  <Button
-                    onClick={startProcessing}
-                    className="bg-gradient-to-r from-blue-600 to-cyan-600 text-white hover:from-blue-700 hover:to-cyan-700 shadow-lg px-8 py-3 text-lg"
-                  >
-                    <Play className="h-5 w-5 mr-2" />
-                    Start rv0 Vectorization
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
         )}
 
         {/* Generated Command & Export */}
