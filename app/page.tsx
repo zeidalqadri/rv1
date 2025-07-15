@@ -392,7 +392,7 @@ export default function RV0VectorStudio() {
       shapes.push(`<circle cx="${centerX}" cy="${centerY}" r="118" fill="none" stroke="${colors[1]}" strokeWidth="2" opacity="0.6"/>`)
     }
     
-    return `<svg viewBox="${viewBox}" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: 100%;">
+    return `<svg viewBox="${viewBox}" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">
       <defs>
         <filter id="soften">
           <feGaussianBlur in="SourceGraphic" stdDeviation="0.5"/>
@@ -544,17 +544,20 @@ export default function RV0VectorStudio() {
 
                 <div className="text-center">
                   <h4 className="font-semibold mb-2">Vectorized SVG</h4>
-                  <div className="aspect-square lg:aspect-square bg-gray-100 border border-gray-300 rounded flex items-center justify-center overflow-hidden">
+                  <div className="aspect-square lg:aspect-square bg-gray-100 border border-gray-300 rounded overflow-hidden">
                     {svgPreview ? (
                       <div 
                         dangerouslySetInnerHTML={{ __html: svgPreview }} 
-                        className="w-full h-full flex items-center justify-center"
-                        style={{ maxWidth: '100%', maxHeight: '100%' }}
+                        className="w-full h-full [&>svg]:w-full [&>svg]:h-full [&>svg]:object-contain"
                       />
                     ) : progress.status === "complete" ? (
-                      <span className="text-green-600">✅ Ready</span>
+                      <div className="w-full h-full flex items-center justify-center">
+                        <span className="text-green-600">✅ Ready</span>
+                      </div>
                     ) : (
-                      <span className="text-gray-500">Processing...</span>
+                      <div className="w-full h-full flex items-center justify-center">
+                        <span className="text-gray-500">Processing...</span>
+                      </div>
                     )}
                   </div>
                   {processingResult?.metrics && (
